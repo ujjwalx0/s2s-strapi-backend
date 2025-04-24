@@ -86,10 +86,15 @@ jobs:
             # Create required directories with proper permissions
             sudo mkdir -p /strapi/{config,uploads,cache}
             sudo chown -R ubuntu:ubuntu /strapi
-            
+
+            # Fix: Ensure /tmp/ca.pem is not a directory
+            if [ -d /tmp/ca.pem ]; then
+              sudo rm -rf /tmp/ca.pem
+            fi
+
             # Prepare SSL certificate
-            echo "${{ secrets.DATABASE_CA_CERT }}" > /tmp/ca.pem
-            chmod 644 /tmp/ca.pem
+            echo "${{ secrets.DATABASE_CA_CERT }}" | sudo tee /tmp/ca.pem > /dev/null
+            sudo chmod 644 /tmp/ca.pem
             
             # Create environment file
             cat <<EOT > /home/ubuntu/.env
