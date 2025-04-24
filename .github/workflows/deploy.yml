@@ -46,12 +46,15 @@ jobs:
           username: ${{ env.OCI_SSH_USER }}
           key: ${{ secrets.OCI_SSH_KEY }}
           script: |
-            # Remove existing ca.pem directory if it exists
-            rm -rf /tmp/ca.pem || true
-            
-            # Write the CA certificate as a file
-            echo "${{ secrets.DATABASE_CA_CERT }}" > /tmp/ca.pem
-            
+            # Check if /home/ubuntu/ca.pem exists and remove it if it's a directory
+            if [ -d "/home/ubuntu/ca.pem" ]; then
+              echo "Removing existing directory /home/ubuntu/ca.pem"
+              rm -rf /home/ubuntu/ca.pem || true
+            fi
+
+            # Write the CA certificate to a new location
+            echo "${{ secrets.DATABASE_CA_CERT }}" > /home/ubuntu/ca.pem
+
             # Create the .env file for environment variables
             cat <<EOT > .env
             DATABASE_CLIENT=postgres
@@ -85,7 +88,7 @@ jobs:
               --name strapi \
               --restart unless-stopped \
               -p 1337:1337 \
-              -v /tmp/ca.pem:/app/ca.pem \
+              -v /home/ubuntu/ca.pem:/app/ca.pem \
               --env-file .env \
               ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
 
@@ -94,4 +97,4 @@ jobs:
             docker logs strapi --tail 50
 
             # Clean up
-            rm -f .env /tmp/ca.pem
+            rm -f .env /home/ubuntu/ca.pem
