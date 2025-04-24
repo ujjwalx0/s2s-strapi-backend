@@ -46,7 +46,13 @@ jobs:
           username: ${{ env.OCI_SSH_USER }}
           key: ${{ secrets.OCI_SSH_KEY }}
           script: |
+            # Remove existing ca.pem directory if it exists
+            rm -rf /tmp/ca.pem || true
+            
+            # Write the CA certificate as a file
             echo "${{ secrets.DATABASE_CA_CERT }}" > /tmp/ca.pem
+            
+            # Create the .env file for environment variables
             cat <<EOT > .env
             DATABASE_CLIENT=postgres
             DATABASE_HOST=${{ secrets.DATABASE_HOST }}
@@ -64,13 +70,17 @@ jobs:
             TRANSFER_TOKEN_SALT=${{ secrets.TRANSFER_TOKEN_SALT }}
             EOT
 
+            # Docker login
             docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
 
+            # Stop and remove any existing container
             docker stop strapi || true
             docker rm strapi || true
 
+            # Pull the latest Docker image
             docker pull ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
 
+            # Run the Docker container
             docker run -d \
               --name strapi \
               --restart unless-stopped \
@@ -79,7 +89,9 @@ jobs:
               --env-file .env \
               ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
 
+            # Give it a moment to start
             sleep 10
             docker logs strapi --tail 50
 
+            # Clean up
             rm -f .env /tmp/ca.pem
