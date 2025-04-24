@@ -26,6 +26,9 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      - name: Install TypeScript
+        run: npm install typescript --save-dev
+
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
@@ -41,7 +44,7 @@ jobs:
 
       - name: Prepare deployment files
         run: |
-          # Create necessary directories
+          # Ensure config directory exists
           mkdir -p config
           
           # Create database.ts with correct path
@@ -80,14 +83,16 @@ jobs:
           username: ${{ env.OCI_SSH_USER }}
           key: ${{ secrets.OCI_SSH_KEY }}
           script: |
-            # Create required directories
+            # Create required directories with proper permissions
             sudo mkdir -p /strapi/{config,uploads,cache}
-            sudo chown -R 1001:1001 /strapi
+            sudo chown -R ubuntu:ubuntu /strapi
             
-            # Prepare files
+            # Prepare SSL certificate
             echo "${{ secrets.DATABASE_CA_CERT }}" > /tmp/ca.pem
+            chmod 644 /tmp/ca.pem
             
-            cat <<EOT > .env
+            # Create environment file
+            cat <<EOT > /home/ubuntu/.env
             DATABASE_CLIENT=postgres
             DATABASE_HOST=${{ secrets.DATABASE_HOST }}
             DATABASE_PORT=${{ secrets.DATABASE_PORT }}
@@ -104,12 +109,14 @@ jobs:
             TRANSFER_TOKEN_SALT=${{ secrets.TRANSFER_TOKEN_SALT }}
             EOT
 
-            # Container management
+            # Docker operations
+            docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+            
+            # Clean up any existing container
             docker stop strapi || true
             docker rm strapi || true
-            docker pull ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
             
-            # Run container with proper volumes
+            # Pull and run new container
             docker run -d \
               --name strapi \
               --restart unless-stopped \
@@ -118,10 +125,13 @@ jobs:
               -v /strapi/uploads:/app/public/uploads \
               -v /strapi/cache:/app/.cache \
               -v /tmp/ca.pem:/app/ca.pem \
-              --env-file .env \
+              --env-file /home/ubuntu/.env \
               ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
 
             # Verify deployment
-            sleep 15
+            echo "Waiting for Strapi to start..."
+            sleep 20
             docker logs strapi --tail 50
-            rm -f .env /tmp/ca.pem
+            
+            # Cleanup
+            rm -f /home/ubuntu/.env /tmp/ca.pem
