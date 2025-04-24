@@ -1,23 +1,30 @@
-# Use official Node.js image as a base
-FROM node:20
-
-# Set the working directory in the container
-WORKDIR /usr/src/app
-
-# Copy package.json and package-lock.json (or yarn.lock)
+# Stage 1: Build
+FROM node:20-alpine AS builder
+WORKDIR /app
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
-
-# Copy the rest of the application
 COPY . .
+RUN npm run build
 
-# Set environment variable for production
+# Stage 2: Runtime
+FROM node:20-alpine
+WORKDIR /app
+
+# Copy required files
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/build ./build
+COPY --from=builder /app/config ./config
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/ca.pem ./ca.pem
+
+# Security
+RUN chown -R node:node /app
+USER node
+
+# Environment
 ENV NODE_ENV=production
-
-# Expose the port the app will run on
+ENV PORT=1337
 EXPOSE 1337
 
-# Command to run the app
-CMD ["npm", "run", "start"]
+CMD ["npm", "start"]
