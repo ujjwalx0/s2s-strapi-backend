@@ -1,4 +1,4 @@
-name: Deploy Strapi to Oracle Cloud
+name: Deploy Strapi v5 to Oracle Cloud
 
 on:
   push:
@@ -34,20 +34,30 @@ jobs:
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+          build-args: |
+            NODE_ENV=production
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Prepare deployment files
         run: |
           echo "${{ secrets.DATABASE_CA_CERT }}" > ${{ env.DATABASE_CA_FILE }}
-          echo "DATABASE_CLIENT=postgres" >> .env
-          echo "DATABASE_HOST=${{ secrets.DATABASE_HOST }}" >> .env
-          echo "DATABASE_PORT=${{ secrets.DATABASE_PORT }}" >> .env
-          echo "DATABASE_NAME=${{ secrets.DATABASE_NAME }}" >> .env
-          echo "DATABASE_USERNAME=${{ secrets.DATABASE_USERNAME }}" >> .env
-          echo "DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }}" >> .env
-          echo "DATABASE_SSL=true" >> .env
-          echo "NODE_ENV=production" >> .env
+          cat <<EOT >> .env
+          DATABASE_CLIENT=postgres
+          DATABASE_HOST=${{ secrets.DATABASE_HOST }}
+          DATABASE_PORT=${{ secrets.DATABASE_PORT }}
+          DATABASE_NAME=${{ secrets.DATABASE_NAME }}
+          DATABASE_USERNAME=${{ secrets.DATABASE_USERNAME }}
+          DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }}
+          DATABASE_SSL=true
+          DATABASE_SCHEMA=public
+          NODE_ENV=production
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          ADMIN_JWT_SECRET=${{ secrets.ADMIN_JWT_SECRET }}
+          APP_KEYS=${{ secrets.APP_KEYS }}
+          API_TOKEN_SALT=${{ secrets.API_TOKEN_SALT }}
+          TRANSFER_TOKEN_SALT=${{ secrets.TRANSFER_TOKEN_SALT }}
+          EOT
 
       - name: Deploy to Oracle Cloud
         uses: appleboy/ssh-action@v1
@@ -56,35 +66,40 @@ jobs:
           username: ${{ env.OCI_SSH_USER }}
           key: ${{ secrets.OCI_SSH_KEY }}
           script: |
-            # Create required directories
-            sudo mkdir -p /strapi/{config,uploads,tmp}
+            # Create required directories (Strapi v5 specific)
+            sudo mkdir -p /strapi/{config,uploads,cache,database}
             sudo chown -R 1001:1001 /strapi
             
-            # Transfer files
+            # Transfer SSL certificate
             echo "${{ secrets.DATABASE_CA_CERT }}" > /tmp/ca.pem
+            
+            # Authenticate Docker
             echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
             
-            # Stop and remove old container
+            # Stop existing container
             docker stop strapi || true
             docker rm strapi || true
             
             # Pull new image
             docker pull ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
             
-            # Run new container
+            # Run new container (Strapi v5 optimized)
             docker run -d \
               --name strapi \
               --restart unless-stopped \
               -p 1337:1337 \
               -v /strapi/config:/app/config \
               -v /strapi/uploads:/app/public/uploads \
-              -v /strapi/tmp:/app/.tmp \
+              -v /strapi/cache:/app/.cache \
+              -v /strapi/database:/app/.tmp \
               -v /tmp/ca.pem:/app/ca.pem \
               --env-file .env \
               ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
             
-            # Cleanup
-            rm /tmp/ca.pem
+            # Verify deployment
+            sleep 10
+            docker logs strapi --tail 50
+            rm -f /tmp/ca.pem
 
       - name: Cleanup
         run: |
