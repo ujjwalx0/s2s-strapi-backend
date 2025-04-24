@@ -39,6 +39,40 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Prepare deployment files
+        run: |
+          # Create necessary directories
+          mkdir -p config
+          
+          # Create database.ts with correct path
+          cat << 'EOT' > config/database.ts
+          import fs from 'fs';
+          import path from 'path';
+          import type { DatabaseConfig } from '@strapi/strapi';
+
+          export default ({ env }): DatabaseConfig => ({
+            connection: {
+              client: 'postgres',
+              connection: {
+                host: env('DATABASE_HOST'),
+                port: env.int('DATABASE_PORT'),
+                database: env('DATABASE_NAME'),
+                user: env('DATABASE_USERNAME'),
+                password: env('DATABASE_PASSWORD'),
+                ssl: {
+                  ca: fs.readFileSync(path.join(__dirname, '../ca.pem')).toString(),
+                  rejectUnauthorized: true,
+                },
+                schema: env('DATABASE_SCHEMA', 'public'),
+              },
+              pool: {
+                min: env.int('DATABASE_POOL_MIN', 2),
+                max: env.int('DATABASE_POOL_MAX', 10)
+              }
+            }
+          });
+          EOT
+
       - name: Deploy to Oracle Cloud
         uses: appleboy/ssh-action@v1
         with:
@@ -46,16 +80,13 @@ jobs:
           username: ${{ env.OCI_SSH_USER }}
           key: ${{ secrets.OCI_SSH_KEY }}
           script: |
-            # Check if /home/ubuntu/ca.pem exists and remove it if it's a directory
-            if [ -d "/home/ubuntu/ca.pem" ]; then
-              echo "Removing existing directory /home/ubuntu/ca.pem"
-              rm -rf /home/ubuntu/ca.pem || true
-            fi
-
-            # Write the CA certificate to a new location
-            echo "${{ secrets.DATABASE_CA_CERT }}" > /home/ubuntu/ca.pem
-
-            # Create the .env file for environment variables
+            # Create required directories
+            sudo mkdir -p /strapi/{config,uploads,cache}
+            sudo chown -R 1001:1001 /strapi
+            
+            # Prepare files
+            echo "${{ secrets.DATABASE_CA_CERT }}" > /tmp/ca.pem
+            
             cat <<EOT > .env
             DATABASE_CLIENT=postgres
             DATABASE_HOST=${{ secrets.DATABASE_HOST }}
@@ -73,28 +104,24 @@ jobs:
             TRANSFER_TOKEN_SALT=${{ secrets.TRANSFER_TOKEN_SALT }}
             EOT
 
-            # Docker login
-            docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
-
-            # Stop and remove any existing container
+            # Container management
             docker stop strapi || true
             docker rm strapi || true
-
-            # Pull the latest Docker image
             docker pull ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
-
-            # Run the Docker container
+            
+            # Run container with proper volumes
             docker run -d \
               --name strapi \
               --restart unless-stopped \
               -p 1337:1337 \
-              -v /home/ubuntu/ca.pem:/app/ca.pem \
+              -v /strapi/config:/app/config \
+              -v /strapi/uploads:/app/public/uploads \
+              -v /strapi/cache:/app/.cache \
+              -v /tmp/ca.pem:/app/ca.pem \
               --env-file .env \
               ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
 
-            # Give it a moment to start
-            sleep 10
+            # Verify deployment
+            sleep 15
             docker logs strapi --tail 50
-
-            # Clean up
-            rm -f .env /home/ubuntu/ca.pem
+            rm -f .env /tmp/ca.pem
