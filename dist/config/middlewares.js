@@ -3,7 +3,32 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.default = [
     'strapi::logger',
     'strapi::errors',
-    'strapi::security',
+    {
+        name: 'strapi::security',
+        config: {
+            contentSecurityPolicy: {
+                useDefaults: true,
+                directives: {
+                    'connect-src': ["'self'", 'https:'],
+                    'img-src': [
+                        "'self'",
+                        'data:',
+                        'blob:',
+                        'market-assets.strapi.io',
+                        'res.cloudinary.com', // Add Cloudinary to img-src
+                    ],
+                    'media-src': [
+                        "'self'",
+                        'data:',
+                        'blob:',
+                        'market-assets.strapi.io',
+                        'res.cloudinary.com', // Add Cloudinary to media-src
+                    ],
+                    upgradeInsecureRequests: null,
+                },
+            },
+        },
+    },
     'strapi::cors',
     'strapi::poweredBy',
     'strapi::query',
