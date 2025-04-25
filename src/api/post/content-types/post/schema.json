@@ -36,9 +36,6 @@
       "type": "richtext",
       "required": true
     },
-    "postedAt": {
-      "type": "datetime"
-    },
     "seo": {
       "type": "component",
       "repeatable": false,
