@@ -15,6 +15,15 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["../plugins/**/admin/src/**/*", "./"],
-  "exclude": ["node_modules/", "build/", "dist/", "**/*.test.ts"]
+  "include": [
+    "../plugins/**/admin/src/**/*",
+    "./",
+    "../declarations.d.ts"  // Ensure this file is included
+  ],
+  "exclude": [
+    "node_modules/",
+    "build/",
+    "dist/",
+    "**/*.test.ts"
+  ]
 }
